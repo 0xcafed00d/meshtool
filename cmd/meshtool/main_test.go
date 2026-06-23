@@ -17,6 +17,17 @@ func TestParseMat4Flag(t *testing.T) {
 	}
 }
 
+func TestParseMat4FlagIgnoresBracketsAndCommas(t *testing.T) {
+	matrix, err := parseMat4Flag("[[1, 0, 0, 10], [0, 1, 0, 20], [0, 0, 1, 30], [0, 0, 0, 1]]")
+	if err != nil {
+		t.Fatalf("parseMat4Flag() error = %v", err)
+	}
+
+	if matrix[0][3] != 10 || matrix[1][3] != 20 || matrix[2][3] != 30 || matrix[3][3] != 1 {
+		t.Fatalf("unexpected matrix: %+v", matrix)
+	}
+}
+
 func TestParseMat4FlagRejectsWrongCount(t *testing.T) {
 	if _, err := parseMat4Flag("1 0 0 1"); err == nil {
 		t.Fatal("parseMat4Flag() error = nil, want wrong-count error")

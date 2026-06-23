@@ -15,6 +15,7 @@ go build -o meshtool ./cmd/meshtool
 ./meshtool transform -normalize 1 Mesh\ 0623_3.obj normalized.obj
 ./meshtool transform -center -scale 0.5 -rz 90 Mesh\ 0623_3.obj rotated.obj
 ./meshtool transform -matrix "1 0 0 10 0 1 0 0 0 0 1 0 0 0 0 1" input.obj moved.obj
+./meshtool transform -matrix "[[1,0,0,10], [0,1,0,0], [0,0,1,0], [0,0,0,1]]" input.obj moved.obj
 ./meshtool triangulate input.obj triangles.obj
 ./meshtool slice x+ input.obj positive-x.obj
 ./meshtool slice -at 12.5 z- input.obj below-z.obj

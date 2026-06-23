@@ -385,7 +385,7 @@ func parseVec3Flag(value string) (obj.Vec3, error) {
 
 func parseMat4Flag(value string) (obj.Mat4, error) {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
-		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+		return r == '[' || r == ']' || r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
 	})
 	if len(parts) != 16 {
 		return obj.Mat4{}, fmt.Errorf("expected 16 values, got %d", len(parts))
@@ -456,7 +456,8 @@ Transform options:
   -translate x,y,z     translation vector
   -tx/-ty/-tz <value>  per-axis translation added to -translate
   -rx/-ry/-rz <deg>    rotations in degrees, applied X then Y then Z
-  -matrix <16 values>  row-major affine 4x4 applied after other transforms
+  -matrix <16 values>  row-major affine 4x4 applied after other transforms;
+                       spaces, commas, and [] are accepted as separators
   -flip-x/-flip-y/-flip-z
                        mirror an axis and preserve outward winding
   -reverse-winding     reverse face winding after transform determinant handling
