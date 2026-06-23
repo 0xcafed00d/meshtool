@@ -135,3 +135,39 @@ func TestTriangulateQuad(t *testing.T) {
 		t.Fatalf("triangulated OBJ = %q, want %q", output.String(), want)
 	}
 }
+
+func TestSliceReusesIntersectionVertexForSharedEdge(t *testing.T) {
+	doc, err := Parse(strings.NewReader(strings.Join([]string{
+		"v -1 0 0",
+		"v 1 0 0",
+		"v -1 1 0",
+		"v 1 1 0",
+		"f 1 2 3",
+		"f 3 2 4",
+	}, "\n")))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	options, err := ParseSliceSide("x+")
+	if err != nil {
+		t.Fatalf("ParseSliceSide() error = %v", err)
+	}
+	if _, err := doc.Slice(options); err != nil {
+		t.Fatalf("Slice() error = %v", err)
+	}
+
+	stats := doc.Stats()
+	if stats.Vertices != 5 {
+		t.Fatalf("sliced vertex count = %d, want 5", stats.Vertices)
+	}
+
+	var output strings.Builder
+	if err := doc.Write(&output); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	written := output.String()
+	if !strings.Contains(written, "f 3 1 4") || !strings.Contains(written, "f 5 4 1 2") {
+		t.Fatalf("sliced faces do not share the cut-edge vertex:\n%s", written)
+	}
+}

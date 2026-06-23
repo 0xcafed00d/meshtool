@@ -52,6 +52,25 @@ type sliceBuilder struct {
 	newVertices           []VertexRecord
 	newTexCoords          []TexCoordRecord
 	newNormals            []NormalRecord
+	intersections         map[edgeKey]*edgeIntersection
+}
+
+type edgeKey struct {
+	A int
+	B int
+}
+
+type edgeAttributeKey struct {
+	AVertex int
+	BVertex int
+	AIndex  int
+	BIndex  int
+}
+
+type edgeIntersection struct {
+	vertexIndex int
+	texCoords   map[edgeAttributeKey]int
+	normals     map[edgeAttributeKey]int
 }
 
 func ParseSliceSide(value string) (SliceOptions, error) {
@@ -95,6 +114,7 @@ func (doc *Document) Slice(options SliceOptions) (SliceResult, error) {
 		originalVertexCount:   len(vertices),
 		originalTexCoordCount: len(texCoords),
 		originalNormalCount:   len(normals),
+		intersections:         map[edgeKey]*edgeIntersection{},
 	}
 
 	result := SliceResult{InputFaces: len(faces)}
@@ -304,19 +324,19 @@ func intersectClipVertices(a clipVertex, b clipVertex, distanceA float64, distan
 	}
 
 	position := lerpVec3(a.position, b.position, t)
-	ref := FaceRef{V: builder.addVertex(position)}
+	ref := FaceRef{V: builder.addIntersectionVertex(a.ref.V, b.ref.V, position)}
 	vertex := clipVertex{ref: ref, position: position}
 
 	if a.hasTexCoord && b.hasTexCoord && len(a.texCoord) == len(b.texCoord) {
 		vertex.texCoord = lerpFloat64s(a.texCoord, b.texCoord, t)
 		vertex.hasTexCoord = true
-		vertex.ref.VT = builder.addTexCoord(vertex.texCoord)
+		vertex.ref.VT = builder.addIntersectionTexCoord(a, b, vertex.texCoord)
 		vertex.ref.HasVT = true
 	}
 	if a.hasNormal && b.hasNormal {
 		vertex.normal = lerpVec3(a.normal, b.normal, t).Normalize()
 		vertex.hasNormal = true
-		vertex.ref.VN = builder.addNormal(vertex.normal)
+		vertex.ref.VN = builder.addIntersectionNormal(a, b, vertex.normal)
 		vertex.ref.HasVN = true
 	}
 
@@ -364,14 +384,70 @@ func (builder *sliceBuilder) addVertex(position Vec3) int {
 	return builder.originalVertexCount + len(builder.newVertices)
 }
 
+func (builder *sliceBuilder) addIntersectionVertex(a int, b int, position Vec3) int {
+	key := newEdgeKey(a, b)
+	intersection, ok := builder.intersections[key]
+	if ok {
+		return intersection.vertexIndex
+	}
+
+	intersection = &edgeIntersection{
+		vertexIndex: builder.addVertex(position),
+		texCoords:   map[edgeAttributeKey]int{},
+		normals:     map[edgeAttributeKey]int{},
+	}
+	builder.intersections[key] = intersection
+	return intersection.vertexIndex
+}
+
 func (builder *sliceBuilder) addTexCoord(values []float64) int {
 	builder.newTexCoords = append(builder.newTexCoords, TexCoordRecord{Values: cloneFloat64s(values)})
 	return builder.originalTexCoordCount + len(builder.newTexCoords)
 }
 
+func (builder *sliceBuilder) addIntersectionTexCoord(a clipVertex, b clipVertex, values []float64) int {
+	key := newEdgeKey(a.ref.V, b.ref.V)
+	intersection := builder.intersections[key]
+	attrKey := newEdgeAttributeKey(a.ref.V, a.ref.VT, b.ref.V, b.ref.VT)
+	if index, ok := intersection.texCoords[attrKey]; ok {
+		return index
+	}
+
+	index := builder.addTexCoord(values)
+	intersection.texCoords[attrKey] = index
+	return index
+}
+
 func (builder *sliceBuilder) addNormal(direction Vec3) int {
 	builder.newNormals = append(builder.newNormals, NormalRecord{Direction: direction})
 	return builder.originalNormalCount + len(builder.newNormals)
+}
+
+func (builder *sliceBuilder) addIntersectionNormal(a clipVertex, b clipVertex, direction Vec3) int {
+	key := newEdgeKey(a.ref.V, b.ref.V)
+	intersection := builder.intersections[key]
+	attrKey := newEdgeAttributeKey(a.ref.V, a.ref.VN, b.ref.V, b.ref.VN)
+	if index, ok := intersection.normals[attrKey]; ok {
+		return index
+	}
+
+	index := builder.addNormal(direction)
+	intersection.normals[attrKey] = index
+	return index
+}
+
+func newEdgeKey(a int, b int) edgeKey {
+	if a < b {
+		return edgeKey{A: a, B: b}
+	}
+	return edgeKey{A: b, B: a}
+}
+
+func newEdgeAttributeKey(aVertex int, aIndex int, bVertex int, bIndex int) edgeAttributeKey {
+	if aVertex < bVertex {
+		return edgeAttributeKey{AVertex: aVertex, BVertex: bVertex, AIndex: aIndex, BIndex: bIndex}
+	}
+	return edgeAttributeKey{AVertex: bVertex, BVertex: aVertex, AIndex: bIndex, BIndex: aIndex}
 }
 
 func (builder *sliceBuilder) records() []Record {

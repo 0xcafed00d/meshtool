@@ -24,6 +24,6 @@ go build -o meshtool ./cmd/meshtool
 
 `transform` supports centering, normalizing, uniform/per-axis scaling, translation, X/Y/Z rotations, row-major affine 4x4 matrices, axis flips, and winding reversal. Matrix transforms are applied after the other transform options. The parser preserves record order and passes through unsupported OBJ records unchanged.
 
-`slice` clips faces against an axis-aligned plane. `x+`, `y+`, and `z+` keep coordinates greater than or equal to the plane; `x-`, `y-`, and `z-` keep coordinates less than or equal to it. The default plane coordinate is `0`; use `-at` to move it.
+`slice` clips faces against an axis-aligned plane. `x+`, `y+`, and `z+` keep coordinates greater than or equal to the plane; `x-`, `y-`, and `z-` keep coordinates less than or equal to it. The default plane coordinate is `0`; use `-at` to move it. Cut-edge vertices are welded across adjacent faces so the sliced boundary remains connected.
 
 `chain` runs `transform`, `slice`, and `triangulate` operations in the order listed, without writing intermediate OBJ files.
