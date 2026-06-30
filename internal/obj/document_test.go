@@ -136,6 +136,89 @@ func TestTriangulateQuad(t *testing.T) {
 	}
 }
 
+func TestEdgeLengthStats(t *testing.T) {
+	doc, err := Parse(strings.NewReader(strings.Join([]string{
+		"v 0 0 0",
+		"v 3 0 0",
+		"v 0 4 0",
+		"f 1 2 3",
+	}, "\n")))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	stats, err := doc.EdgeLengthStats()
+	if err != nil {
+		t.Fatalf("EdgeLengthStats() error = %v", err)
+	}
+	if stats.Edges != 3 || stats.Min != 3 || stats.Median != 4 || stats.Max != 5 {
+		t.Fatalf("unexpected edge stats: %+v", stats)
+	}
+}
+
+func TestRemeshSplitsLongEdges(t *testing.T) {
+	doc, err := Parse(strings.NewReader(strings.Join([]string{
+		"v 0 0 0",
+		"v 4 0 0",
+		"v 0 3 0",
+		"vt 0 0",
+		"vn 0 0 1",
+		"f 1/1/1 2/1/1 3/1/1",
+	}, "\n")))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	result, err := doc.Remesh(RemeshOptions{TargetLength: 4.5, MaxFactor: 1, Iterations: 1})
+	if err != nil {
+		t.Fatalf("Remesh() error = %v", err)
+	}
+	if result.Splits != 1 || result.OutputVertices != 4 || result.OutputFaces != 2 {
+		t.Fatalf("unexpected remesh result: %+v", result)
+	}
+
+	var output strings.Builder
+	if err := doc.Write(&output); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	written := output.String()
+	if strings.Contains(written, "vt ") || strings.Contains(written, "vn ") {
+		t.Fatalf("remesh output kept stale attributes:\n%s", written)
+	}
+	if !strings.Contains(written, "v 2 1.5 0") {
+		t.Fatalf("remesh output missing midpoint vertex:\n%s", written)
+	}
+	if !strings.Contains(written, "f 1 2 4") || !strings.Contains(written, "f 1 4 3") {
+		t.Fatalf("remesh output missing split faces:\n%s", written)
+	}
+}
+
+func TestRemeshSplitsSharedLongEdgesOnBothSides(t *testing.T) {
+	mesh := &TriangleMesh{
+		Vertices: []Vec3{
+			{X: 0, Y: 0, Z: 0},
+			{X: 10, Y: 0, Z: 0},
+			{X: 0, Y: 10, Z: 0},
+			{X: 100, Y: 10, Z: 0},
+		},
+		Faces: [][3]int{
+			{0, 1, 2},
+			{2, 1, 3},
+		},
+	}
+
+	_, err := mesh.Remesh(RemeshOptions{TargetLength: 12, MaxFactor: 1, Iterations: 1})
+	if err != nil {
+		t.Fatalf("Remesh() error = %v", err)
+	}
+	if meshHasEdge(mesh, 1, 2) {
+		t.Fatalf("remesh left the shared long edge unsplit on one side: %+v", mesh.Faces)
+	}
+	if countVerticesAt(mesh, Vec3{X: 5, Y: 5, Z: 0}) != 1 {
+		t.Fatalf("remesh did not reuse one midpoint for the shared edge: %+v", mesh.Vertices)
+	}
+}
+
 func TestSliceReusesIntersectionVertexForSharedEdge(t *testing.T) {
 	doc, err := Parse(strings.NewReader(strings.Join([]string{
 		"v -1 0 0",
@@ -170,4 +253,24 @@ func TestSliceReusesIntersectionVertexForSharedEdge(t *testing.T) {
 	if !strings.Contains(written, "f 3 1 4") || !strings.Contains(written, "f 5 4 1 2") {
 		t.Fatalf("sliced faces do not share the cut-edge vertex:\n%s", written)
 	}
+}
+
+func meshHasEdge(mesh *TriangleMesh, a int, b int) bool {
+	want := newEdgeKey(a, b)
+	for _, face := range mesh.Faces {
+		if newEdgeKey(face[0], face[1]) == want || newEdgeKey(face[1], face[2]) == want || newEdgeKey(face[2], face[0]) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func countVerticesAt(mesh *TriangleMesh, position Vec3) int {
+	count := 0
+	for _, vertex := range mesh.Vertices {
+		if vertex == position {
+			count++
+		}
+	}
+	return count
 }

@@ -31,10 +31,14 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) err
 		return nil
 	case "info":
 		return runInfo(args[1:], stdin, stdout)
+	case "edges":
+		return runEdges(args[1:], stdin, stdout)
 	case "transform":
 		return runTransform(args[1:], stdin, stdout, stderr)
 	case "triangulate":
 		return runTriangulate(args[1:], stdin, stdout, stderr)
+	case "remesh":
+		return runRemesh(args[1:], stdin, stdout, stderr)
 	case "slice":
 		return runSlice(args[1:], stdin, stdout, stderr)
 	case "chain":
@@ -60,6 +64,28 @@ func runInfo(args []string, stdin io.Reader, stdout io.Writer) error {
 		return err
 	}
 	printInfo(stdout, flags.Arg(0), doc.Stats())
+	return nil
+}
+
+func runEdges(args []string, stdin io.Reader, stdout io.Writer) error {
+	flags := flag.NewFlagSet("edges", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 1 {
+		return errors.New("usage: meshtool edges <input.obj>")
+	}
+
+	doc, err := readOBJ(flags.Arg(0), stdin)
+	if err != nil {
+		return err
+	}
+	stats, err := doc.EdgeLengthStats()
+	if err != nil {
+		return err
+	}
+	printEdgeLengthStats(stdout, flags.Arg(0), stats)
 	return nil
 }
 
@@ -109,6 +135,35 @@ func runTriangulate(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		return err
 	}
 	fmt.Fprintf(stderr, "triangulated %d polygon face(s) into %d triangle face(s); wrote %s\n", result.Polygons, result.NewTriangles, flags.Arg(1))
+	return nil
+}
+
+func runRemesh(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+	flags, values := newRemeshFlagSet("remesh")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 2 {
+		return errors.New("usage: meshtool remesh [options] <input.obj> <output.obj>")
+	}
+
+	doc, err := readOBJ(flags.Arg(0), stdin)
+	if err != nil {
+		return err
+	}
+	options := obj.RemeshOptions{
+		TargetLength: *values.target,
+		MaxFactor:    *values.maxFactor,
+		Iterations:   *values.iterations,
+	}
+	result, err := doc.Remesh(options)
+	if err != nil {
+		return err
+	}
+	if err := writeOBJ(flags.Arg(1), stdout, doc); err != nil {
+		return err
+	}
+	fmt.Fprintf(stderr, "remeshed %d triangle face(s) into %d triangle face(s), split %d edge(s) over %d iteration(s); wrote %s\n", result.InputFaces, result.OutputFaces, result.Splits, result.Iterations, flags.Arg(1))
 	return nil
 }
 
@@ -280,6 +335,24 @@ type sliceFlagValues struct {
 	epsilon  *float64
 }
 
+type remeshFlagValues struct {
+	target     *float64
+	maxFactor  *float64
+	iterations *int
+}
+
+func newRemeshFlagSet(name string) (*flag.FlagSet, remeshFlagValues) {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+
+	values := remeshFlagValues{
+		target:     flags.Float64("target", 0, "target triangle edge length"),
+		maxFactor:  flags.Float64("max-factor", 1.33, "split edges longer than target multiplied by this value"),
+		iterations: flags.Int("iterations", 5, "maximum remesh split iterations"),
+	}
+	return flags, values
+}
+
 func newSliceFlagSet(name string) (*flag.FlagSet, sliceFlagValues) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -425,6 +498,20 @@ func printInfo(writer io.Writer, path string, stats obj.Stats) {
 	}
 }
 
+func printEdgeLengthStats(writer io.Writer, path string, stats obj.EdgeLengthStats) {
+	fmt.Fprintf(writer, "File: %s\n", path)
+	fmt.Fprintf(writer, "Edges: %d\n", stats.Edges)
+	if stats.Edges == 0 {
+		return
+	}
+	fmt.Fprintf(writer, "Edge length min: %s\n", formatFloat(stats.Min))
+	fmt.Fprintf(writer, "Edge length mean: %s\n", formatFloat(stats.Mean))
+	fmt.Fprintf(writer, "Edge length median: %s\n", formatFloat(stats.Median))
+	fmt.Fprintf(writer, "Edge length p90: %s\n", formatFloat(stats.P90))
+	fmt.Fprintf(writer, "Edge length p95: %s\n", formatFloat(stats.P95))
+	fmt.Fprintf(writer, "Edge length max: %s\n", formatFloat(stats.Max))
+}
+
 func formatFloat(value float64) string {
 	return strconv.FormatFloat(value, 'g', -1, 64)
 }
@@ -434,8 +521,10 @@ func printUsage(writer io.Writer) {
 
 Usage:
   meshtool info <input.obj>
+  meshtool edges <input.obj>
   meshtool transform [options] <input.obj> <output.obj>
   meshtool triangulate <input.obj> <output.obj>
+  meshtool remesh [options] <input.obj> <output.obj>
   meshtool slice [options] <x-|x+|y-|y+|z-|z+> <input.obj> <output.obj>
   meshtool chain <input.obj> <output.obj> <operation> [operation ...]
 
@@ -447,6 +536,11 @@ Chain operations:
 Slice options:
   -at <value>          plane coordinate; default 0
   -eps <value>         classification epsilon; default 1e-9
+
+Remesh options:
+  -target <length>     target triangle edge length; required
+  -max-factor <ratio>  split edges longer than target*ratio; default 1.33
+  -iterations <count>  maximum split iterations; default 5
 
 Transform options:
   -center              move bounding-box center to origin before other transforms

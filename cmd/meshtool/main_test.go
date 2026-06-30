@@ -64,6 +64,50 @@ func TestRunChainAppliesOperationsInOrder(t *testing.T) {
 	}
 }
 
+func TestRunEdgesPrintsLengthStats(t *testing.T) {
+	input := strings.NewReader(strings.Join([]string{
+		"v 0 0 0",
+		"v 3 0 0",
+		"v 0 4 0",
+		"f 1 2 3",
+	}, "\n"))
+	var stdout bytes.Buffer
+
+	err := run([]string{"edges", "-"}, input, &stdout, ioDiscard{})
+	if err != nil {
+		t.Fatalf("run(edges) error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Edges: 3") || !strings.Contains(output, "Edge length max: 5") {
+		t.Fatalf("edges output missing stats:\n%s", output)
+	}
+}
+
+func TestRunRemeshSplitsLongEdges(t *testing.T) {
+	input := strings.NewReader(strings.Join([]string{
+		"v 0 0 0",
+		"v 4 0 0",
+		"v 0 3 0",
+		"f 1 2 3",
+	}, "\n"))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := run([]string{"remesh", "-target", "4.5", "-max-factor", "1", "-iterations", "1", "-", "-"}, input, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(remesh) error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "v 2 1.5 0") || !strings.Contains(output, "f 1 2 4") || !strings.Contains(output, "f 1 4 3") {
+		t.Fatalf("remesh output missing split geometry:\n%s", output)
+	}
+	if !strings.Contains(stderr.String(), "split 1 edge(s)") {
+		t.Fatalf("stderr missing remesh counts: %q", stderr.String())
+	}
+}
+
 func TestRunSliceClipsPositiveSide(t *testing.T) {
 	input := strings.NewReader(strings.Join([]string{
 		"v -1 0 0",
